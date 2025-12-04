@@ -4,41 +4,131 @@ import crypto from "crypto";
 const app = express();
 app.use(express.json());
 
-const SECRET = process.env.LICENSE_SECRET;
+// ----------------------------------------
+// LICENSE GENERATION
+// ----------------------------------------
 
-// Generate a license key
-function generateLicense() {
-    return crypto.randomBytes(16).toString("hex");
+// Generate random hex blocks
+function randomBlock(length = 16) {
+  return crypto.randomBytes(length).toString("hex").toUpperCase();
 }
 
-// POST /generate  (You only call this manually through Postman/Insomnia)
+// License prefixes by tier
+const LICENSE_TYPES = {
+  S: "Sentinel",
+  G: "Guardian",
+  A: "Apex"
+};
+
+// Build the final license format
+function generateLicense(type) {
+  const prefix = type.toUpperCase();
+
+  // Formats:
+  // S-XXXX....
+  // G-XXXX....
+  // A-XXXX....
+  const licenseKey = `${prefix}-${randomBlock(12)}`;
+
+  return licenseKey;
+}
+
+// ----------------------------------------
+// STORAGE (temporary memory)
+// ----------------------------------------
+
+const licenseStorage = []; 
+// In production we switch to PostgreSQL or MongoDB
+
+// ----------------------------------------
+// API ROUTES
+// ----------------------------------------
+
+// ROOT
+app.get("/", (req, res) => {
+  res.json({
+    status: "License Server Running",
+    endpoints: {
+      generate: "POST /generate",
+      store: "POST /store",
+      validate: "POST /validate",
+      all: "GET /all"
+    }
+  });
+});
+
+// Generate license only (no storing)
 app.post("/generate", (req, res) => {
+  const { type } = req.body;
 
-    const auth = req.headers["authorization"];
-    if (!auth || auth !== `Bearer ${SECRET}`)
-        return res.status(403).json({ error: "Unauthorized" });
+  if (!type || !LICENSE_TYPES[type]) {
+    return res.status(400).json({ error: "Invalid license type (S, G, A allowed)" });
+  }
 
-    const key = generateLicense();
-    savedLicenses.add(key);
-    res.json({ license: key });
+  const license = generateLicense(type);
+
+  res.json({
+    license,
+    tier: LICENSE_TYPES[type],
+    generatedAt: new Date().toISOString()
+  });
 });
 
-const savedLicenses = new Set();
+// Generate + store license
+app.post("/store", (req, res) => {
+  const { type } = req.body;
 
-// GET /verify?license=xxxx
-app.get("/verify", (req, res) => {
-    const { license } = req.query;
+  if (!type || !LICENSE_TYPES[type]) {
+    return res.status(400).json({ error: "Invalid license type (S, G, A allowed)" });
+  }
 
-    if (!license)
-        return res.status(400).json({ valid: false, error: "No license provided" });
+  const license = generateLicense(type);
 
-    if (savedLicenses.has(license))
-        return res.json({ valid: true });
+  const data = {
+    license,
+    tier: LICENSE_TYPES[type],
+    createdAt: new Date().toISOString()
+  };
 
-    res.json({ valid: false });
+  licenseStorage.push(data);
+
+  res.json({
+    stored: true,
+    ...data
+  });
 });
 
-const PORT = process.env.PORT || 3000;
+// Validate a license
+app.post("/validate", (req, res) => {
+  const { license } = req.body;
+
+  if (!license) {
+    return res.status(400).json({ error: "License required" });
+  }
+
+  const found = licenseStorage.find(l => l.license === license);
+
+  res.json({
+    valid: !!found,
+    license,
+    info: found || null
+  });
+});
+
+// View all stored licenses (DEV ONLY)
+app.get("/all", (req, res) => {
+  res.json({
+    count: licenseStorage.length,
+    licenses: licenseStorage
+  });
+});
+
+// ----------------------------------------
+// START SERVER
+// ----------------------------------------
+
+const PORT = process.env.PORT || 8080;
+
 app.listen(PORT, () => {
-    console.log("License server running on port " + PORT);
+  console.log(`License server running on port ${PORT}`);
 });
