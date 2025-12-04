@@ -1,49 +1,44 @@
 import express from "express";
-import fetch from "node-fetch";
-import cors from "cors";
+import crypto from "crypto";
 
 const app = express();
-app.use(cors());
 app.use(express.json());
 
-// Your GitHub raw config file (safe because you can change it anytime)
-const CONFIG_URL = "https://raw.githubusercontent.com/MaximalOG/bot-configs/refs/heads/main/config.json";
+const SECRET = process.env.LICENSE_SECRET;
 
-// Fetch config.json from GitHub
-async function fetchConfig() {
-    const res = await fetch(CONFIG_URL);
-    return await res.json();
+// Generate a license key
+function generateLicense() {
+    return crypto.randomBytes(16).toString("hex");
 }
 
-// Root endpoint (to know server is running)
-app.get("/", (req, res) => {
-    res.send("License server is running!");
+// POST /generate  (You only call this manually through Postman/Insomnia)
+app.post("/generate", (req, res) => {
+
+    const auth = req.headers["authorization"];
+    if (!auth || auth !== `Bearer ${SECRET}`)
+        return res.status(403).json({ error: "Unauthorized" });
+
+    const key = generateLicense();
+    savedLicenses.add(key);
+    res.json({ license: key });
 });
 
-// Verify license endpoint
-app.post("/verify", async (req, res) => {
-    try {
-        const { key } = req.body;
+const savedLicenses = new Set();
 
-        if (!key) return res.json({ success: false, error: "Missing key" });
+// GET /verify?license=xxxx
+app.get("/verify", (req, res) => {
+    const { license } = req.query;
 
-        const config = await fetchConfig();
-        const validKeys = config.validKeys || [];
+    if (!license)
+        return res.status(400).json({ valid: false, error: "No license provided" });
 
-        if (validKeys.includes(key)) {
-            return res.json({ success: true, status: "VALID_LICENSE" });
-        }
+    if (savedLicenses.has(license))
+        return res.json({ valid: true });
 
-        return res.json({ success: false, status: "INVALID_LICENSE" });
-
-    } catch (err) {
-        console.error(err);
-        res.json({
-            success: false,
-            error: "SERVER_ERROR"
-        });
-    }
+    res.json({ valid: false });
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`License server running on port ${PORT}`));
+app.listen(PORT, () => {
+    console.log("License server running on port " + PORT);
+});
