@@ -17,7 +17,7 @@ function randomBlock(length = 16) {
 const LICENSE_TYPES = {
   S: "Sentinel",
   G: "Guardian",
-  A: "Apex"
+  A: "Aegis"
 };
 
 // Build the final license format
