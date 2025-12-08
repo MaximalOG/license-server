@@ -238,6 +238,51 @@ app.get('/validate', (req, res) => {
 app.get('/', (req, res) => {
   res.json({ ok: true, message: 'License server running' });
 });
+// POST /wix/order
+// Public endpoint called by Wix Automations after a purchase
+// Expects: { email: "...", productName: "Sentinel|Guardian|Aegis" }
+app.post('/wix/order', (req, res) => {
+  try {
+    const { email, productName } = req.body || {};
+
+    if (!email || !productName) {
+      return res.status(400).json({ error: 'email and productName required' });
+    }
+
+    // Map Wix product names → internal tiers
+    let tier = null;
+    if (productName === "Sentinel") tier = "S";
+    if (productName === "Guardian") tier = "G";
+    if (productName === "Aegis") tier = "A";
+
+    if (!tier) {
+      return res.status(400).json({ error: "unknown productName" });
+    }
+
+    // Generate license
+    const key = makeKey(tier);
+    const id = uuidv4();
+    const createdAt = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + (30 * 86400000)).toISOString(); // default 30 days
+
+    db.prepare(`
+      INSERT INTO licenses (id, key, tier, owner_email, created_at, expires_at, active)
+      VALUES (?, ?, ?, ?, ?, ?, 1)
+    `).run(id, key, tier, email, createdAt, expiresAt);
+
+    return res.json({
+      ok: true,
+      license: key,
+      email,
+      tier: productName,
+      expiresAt
+    });
+
+  } catch (err) {
+    console.error("Wix order error:", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`License server listening on ${PORT}`);
