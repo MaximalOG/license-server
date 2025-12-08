@@ -238,6 +238,13 @@ app.get('/validate', (req, res) => {
 app.get('/', (req, res) => {
   res.json({ ok: true, message: 'License server running' });
 });
+// at top of /wix/order handler:
+const SHARED_SECRET = process.env.WIX_SHARED_SECRET || 'changeme';
+const reqSecret = req.get('x-webhook-secret') || '';
+if (reqSecret !== SHARED_SECRET) {
+  return res.status(401).json({ error: 'unauthorized' });
+}
+
 // POST /wix/order
 // Public endpoint called by Wix Automations after a purchase
 // Expects: { email: "...", productName: "Sentinel|Guardian|Aegis" }
